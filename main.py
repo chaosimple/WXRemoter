@@ -155,7 +155,7 @@ def group_reply(msg):
     Raises:
         
     Note:
-        
+        群必须保存到通讯录中，否则无法正确获取群信息；
     """
     
     # 根据群消息的FromUserName匹配是哪个群
