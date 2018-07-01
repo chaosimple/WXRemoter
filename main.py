@@ -27,10 +27,12 @@ import itchat
 from itchat.content import *
 
 from command import Command
+from os_operator import OSOperator
 
 # 初始化日志对象
 logger = logging.getLogger(__name__)
 
+BG_SYS_START = False
 
 #----------------------------------------------------------------------
 def get_user_name(msg):
@@ -56,6 +58,8 @@ def get_user_name(msg):
     
     
     return user_name
+    
+    
 #----------------------------------------------------------------------
 def send_screenshot_img(to_user):
     r""" 向指定用户发送当前屏幕截图
@@ -82,6 +86,66 @@ def send_screenshot_img(to_user):
     else:
         print u'发送失败！'
     
+
+
+#----------------------------------------------------------------------
+def do_sys_task(str_msg):
+    r"""根据命令字符串，用于执行系统命令
+        
+    Args:
+        str_msg (string): 以 '@st' 开始的命令字符串；
+    Returns:
+        
+    Raises:
+        
+    Note:
+        执行一系列的系统命令，步骤如下：
+        1. 首先发送 @ststart 命令开启命令系统；
+        2. 执行 @stXXX 相关命令；
+        3. 使用 @stclose 命令退出命令系统；
+        
+        由于涉及对系统文件的操作，为了防止误操作，需要先开启命令系统，才能接收相关指令；
+        命令系统处于关闭状态时不执行相关命令，防止误操作；
+    """
+    
+    str_help = u"\n系统命令:\n"+\
+        u"@ststart 开始系统\n"+\
+        u"@stclose 关闭系统\n"+\
+        u"@stshutdown 关闭服务器\n" +\
+        u"@stcopy 拷贝文件"
+    
+    # 标明命令系统是否处于开启状态
+    # 声明该变量采用全局变量
+    global BG_SYS_START
+    
+    
+    
+    if str_msg == Command.SYS_OPT_START:
+        BG_SYS_START = True
+        return u'命令系统已开启\n准备执行相关系统命令'
+    
+    if str_msg == Command.SYS_OPT_CLOSE:
+        BG_SYS_START = False
+        return u'命令系统已关闭'
+    
+    
+    if not BG_SYS_START:
+        str_msg = u' 还未启动系统，请先启动系统！'
+        str_msg += str_help
+        return str_msg
+    
+    
+    # 执行相关操作
+    if str_msg == Command.SYS_OPT_SHUTDOWN:
+        OSOperator.shutdown()
+    elif str_msg == Command.SYS_OPT_CPYFILE:
+        if OSOperator.copy_file(Command.SRC_DIR_PATH,
+                             Command.DST_DIR_PATH):
+            return u'文件拷贝完成'
+    else:
+        # 如果不能正常解析该命令
+        # 则返回帮助
+        return str_help
     
 #----------------------------------------------------------------------
 # 这里的TEXT表示如果有人发送文本消息()
@@ -130,14 +194,22 @@ def text_reply(msg):
     """
     
     # 发送该消息的用户名
-    to_user_id = msg['FromUserName']
-    to_user_name = get_user_name(msg)
+    from_user_id = msg['FromUserName']
+    from_user_name = get_user_name(msg)
     
-    if Command.SCREENSHOT in msg['Text']:
-        send_screenshot_img(to_user_id)
+    # 文本消息
+    str_msg = msg['Text']
     
-    else:
-        pass
+    # 截图命令
+    if Command.SCREENSHOT in str_msg:
+        send_screenshot_img(from_user_id)
+    
+    
+    # 如果命令是系统命令
+    # 则根据系统状态，执行相关指令
+    if str_msg.startswith(Command.SYS_OPT):
+        return do_sys_task(str_msg)
+    
 
 
 
@@ -179,8 +251,10 @@ def group_reply(msg):
 
 if __name__ == '__main__':
     
+    #itchat.auto_login(hotReload= True, enableCmdQR= 2)
     itchat.auto_login(hotReload= True)
-    itchat.run()
     
+    itchat.run()
+
     pass
     
