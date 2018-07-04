@@ -32,46 +32,41 @@ from os_operator import OSOperator
 # 初始化日志对象
 logger = logging.getLogger(__name__)
 
+# 任务系统是否开启
 BG_SYS_START = False
+# 自动回复是否开启
+BG_SYS_AUTO_REPLY_START = False
+
+# 上一个消息发送者的 ID
+LAST_MSG_SENDER_ID = None
+
 
 #----------------------------------------------------------------------
-def get_user_name(msg):
-    r"""获取发送该 msg 用户的名称
+def get_user_name(user_id, use_remark_name_first = True):
+    r"""根据用户 ID 获取名称 （只针对个人）
         
     Args:
-        
+        user_id (string) : 用户 id；
+        use_remark_name_first (bool, optional): 是否优先使用备注名，默认为True;
     Returns:
-        
-    Raises:
-        
-    Note:
-        
+        user_name (string): 用户名称；
     """
     user_name = ''
+    user = itchat.search_friends(userName= user_id)
     
-    if itchat.search_friends(userName=msg['FromUserName'])['RemarkName']:
-        #优先使用备注名称
-        user_name = itchat.search_friends(userName=msg['FromUserName'])['RemarkName']
-    else:
-        #在好友列表中查询发送信息的好友昵称 
-        user_name = itchat.search_friends(userName=msg['FromUserName'])['NickName']    
-    
-    
+    user_name = user['NickName']
+    if use_remark_name_first and user.get('RemarkName'):
+        user_name = user['RemarkName']
+        
     return user_name
     
     
 #----------------------------------------------------------------------
-def send_screenshot_img(to_user):
+def send_screenshot_img(id_user):
     r""" 向指定用户发送当前屏幕截图
         
     Args:
-        to_user : 要发送的用户名
-    Returns:
-        
-    Raises:
-        
-    Note:
-        
+        to_user : 要发送的用户ID
     """
     
     img_name = 'graph.png'
@@ -81,7 +76,7 @@ def send_screenshot_img(to_user):
     im.save(img_name)
     
     # 发送图片，并删除
-    if itchat.send('@img@{}'.format(img_name), toUserName= to_user):
+    if itchat.send('@img@{}'.format(img_name), toUserName= id_user):
         os.remove(img_name)
     else:
         print u'发送失败！'
@@ -109,15 +104,19 @@ def do_sys_task(str_msg):
     """
     
     str_help = u"\n系统命令:\n"+\
-        u"@ststart 开始系统\n"+\
+        u"{} 开始系统\n".format(Command.SYS_OPT_START)+\
         u"@stclose 关闭系统\n"+\
         u"@stshutdown 关闭服务器\n" +\
-        u"@stcopy 拷贝文件"
+        u"@stcopy 拷贝文件" +\
+        u"{} 开始自动回复\n".format(Command.SYS_OPT_START_AUTO_REPLY) +\
+        u"{} 关闭自动回复\n".format(Command.SYS_OPT_CLOSE_AUTO_REPLY)
     
     # 标明命令系统是否处于开启状态
     # 声明该变量采用全局变量
     global BG_SYS_START
     
+    # 标记自动回复是否开启
+    global BG_SYS_AUTO_REPLY_START
     
     
     if str_msg == Command.SYS_OPT_START:
@@ -142,11 +141,21 @@ def do_sys_task(str_msg):
         if OSOperator.copy_file(Command.SRC_DIR_PATH,
                              Command.DST_DIR_PATH):
             return u'文件拷贝完成'
+    elif str_msg == Command.SYS_OPT_START_AUTO_REPLY:
+        BG_SYS_AUTO_REPLY_START = True
+        return u' 开启自动回复'
+    elif str_msg == Command.SYS_OPT_CLOSE_AUTO_REPLY:
+        G_WHO_SEND = None
+        BG_SYS_AUTO_REPLY_START = False
+        return u'自动回复已关闭'
+    
     else:
         # 如果不能正常解析该命令
         # 则返回帮助
         return str_help
-    
+
+
+
 #----------------------------------------------------------------------
 # 这里的TEXT表示如果有人发送文本消息()
 # TEXT  文本  文本内容(文字消息)
@@ -162,7 +171,7 @@ def do_sys_task(str_msg):
 # NOTE  通知  通知文本(消息撤回等)，那么就会调用下面的方法
 # 其中isFriendChat表示好友之间，isGroupChat表示群聊，isMapChat表示公众号
 
-@itchat.msg_register([TEXT,MAP,CARD,NOTE,SHARING])
+@itchat.msg_register([TEXT,MAP,CARD,NOTE,SHARING], isFriendChat= True)
 def text_reply(msg):
     r""" 自动回复函数，用于对该微信号收到的消息进行处理
         
@@ -192,10 +201,18 @@ def text_reply(msg):
 
 
     """
+    global LAST_MSG_SENDER_ID
     
+
     # 发送该消息的用户名
     from_user_id = msg['FromUserName']
-    from_user_name = get_user_name(msg)
+    from_user_name = get_user_name(from_user_id)
+    
+    to_user_id = msg['ToUserName']
+    to_user_name = get_user_name(to_user_id)
+    
+    self_id = itchat.get_friends(update = True)[0]['UserName']
+    self_name = get_user_name(self_id)
     
     # 文本消息
     str_msg = msg['Text']
@@ -210,7 +227,37 @@ def text_reply(msg):
     if str_msg.startswith(Command.SYS_OPT):
         return do_sys_task(str_msg)
     
+    if to_user_id == self_id:
+        # 标记自动回复是否开启
+        global BG_SYS_AUTO_REPLY_START        
+        
+        if BG_SYS_AUTO_REPLY_START:
+            LAST_MSG_SENDER_ID = from_user_id
+            # 发送给小冰
+            xiaoice = itchat.search_mps(name= u'小冰')[0]['UserName']
+            itchat.send(str_msg, xiaoice)
+    
 
+#----------------------------------------------------------------------
+@itchat.msg_register([TEXT],  isMpChat=True)
+def mp_auto_reply(msg):
+    r""" 对公众号的消息自动回复，实现将小冰回复的信息转发给上次给我发送消息的人
+        
+    """
+    from_user_id = msg['FromUserName']
+    from_user_name = msg['User']['NickName']
+    
+    to_user_id = msg['ToUserName']
+    to_user_name = get_user_name(to_user_id)    
+
+    global LAST_MSG_SENDER_ID
+    global BG_SYS_AUTO_REPLY_START
+    
+    if BG_SYS_AUTO_REPLY_START:
+        xiaoice = itchat.search_mps(name= u'小冰')[0]['UserName']
+        if from_user_id == xiaoice:
+            itchat.send(msg['Text'], toUserName=LAST_MSG_SENDER_ID)
+    
 
 
 #----------------------------------------------------------------------

@@ -37,6 +37,8 @@ class Command(object):
     SYS_OPT_SHUTDOWN = SYS_OPT + 'shutdown'
     SYS_OPT_CPYFILE = SYS_OPT + 'copy'
     
+    SYS_OPT_START_AUTO_REPLY = SYS_OPT + 'sar'
+    SYS_OPT_CLOSE_AUTO_REPLY = SYS_OPT + 'car'
     
     SRC_DIR_PATH = r'C:\Users\Administrator\Desktop\Experiments\sqlite\RandomResults'
     DST_DIR_PATH = r'aaa'
